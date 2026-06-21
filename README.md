@@ -1,6 +1,7 @@
 # 🛡️ Ukraine Air-Raid Alerts — Analytics System
 
 𝗩𝗜𝗗𝗘𝗢 𝗢𝗩𝗘𝗥𝗩𝗜𝗘𝗪 𝗢𝗙 𝗪𝗘𝗕𝗦𝗜𝗧𝗘:𝗵𝘁𝘁𝗽𝘀://𝘄𝘄𝘄.𝗹𝗼𝗼𝗺.𝗰𝗼𝗺/𝘀𝗵𝗮𝗿𝗲/𝗲𝟳𝟳𝗮𝟴𝟲𝟳𝗱𝟭𝗲𝟳𝟭𝟰𝟰𝗳𝟵𝗮𝟯𝟰𝟵𝟲𝟴𝟱𝗮𝗱𝗮𝟬𝟰𝗲𝟴𝗳𝟱
+https://www.loom.com/share/e77a867d1e7144f9a349685ada04e8f5
 
 An interactive **Streamlit** application for analyzing real historical air-raid
 alert data in Ukraine (≈271,000 events, 2022–2026). The app is split into
