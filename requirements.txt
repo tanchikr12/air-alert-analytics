@@ -1,5 +1,5 @@
-# Зависимости приложения. Установка: pip install -r requirements.txt
-# Версии зафиксированы по протестированному окружению (Python 3.14).
+# Application dependencies. Install: pip install -r requirements.txt
+# Versions pinned to the tested environment (Python 3.14).
 streamlit==1.58.0
 pandas==3.0.3
 numpy==2.4.6

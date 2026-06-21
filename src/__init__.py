@@ -1,1 +1,1 @@
-# Пакет исходного кода проекта
+# Project source package

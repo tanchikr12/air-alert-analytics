@@ -1,120 +1,157 @@
-# Анализ воздушных тревог в Украине 🇺🇦
+# 🛡️ Ukraine Air-Raid Alerts — Analytics System
 
-Учебный мини-проект по дата-аналитике на Python. Берёт реальный исторический
-лог сигналов воздушной тревоги (≈271 000 событий, 2022–2026) и превращает его
-в понятные показатели, графики и краткосрочный прогноз.
+An interactive **Streamlit** application for analyzing real historical air-raid
+alert data in Ukraine (≈271,000 events, 2022–2026). The app is split into
+**three independent modes** (tabs at the top).
 
-## Что делает проект
+---
 
-1. **Загрузка** данных из CSV через `pandas`.
-2. **Очистка**: парсинг дат (UTC → киевское время), обработка пропусков,
-   проверка некорректных интервалов, расчёт длительности каждой тревоги,
-   пометка выбросов (тревоги длиннее суток).
-3. **Анализ временных рядов**: тревоги по дням, средняя длительность,
-   самые напряжённые дни, распределение по часам суток, сравнение областей.
-4. **Фильтрация по одной области** — задаётся одной переменной `TARGET_OBLAST`.
-5. **Визуализации** (`matplotlib` + `seaborn`), сохраняются в `output/`.
-6. **Простой прогноз** количества тревог на несколько дней (скользящее
-   среднее + линейная регрессия `scikit-learn`).
+## 🧭 Three modes
 
-## Структура проекта
+### 1. 🔮 30-day forecast
+A probabilistic forecast powered by a machine-learning model.
+- The date is restricted to the **"today → +30 days"** range (determined by the
+  computer's system date).
+- You choose an oblast, a date and a time.
+- Result: **alert probability (%)**, a risk level
+  (🟢 low / 🟠 medium / 🔴 high), the **estimated number of alerts for the day**,
+  reasons, and a probability-by-hour chart.
+
+### 2. 🔎 Historical check
+Verifies a **fact** against the data (no forecast).
+- Date range: from the **start of the invasion (2022-02-24)** to the last date
+  in the CSV.
+- The app checks whether the selected moment falls between an alert's
+  `started_at` and `finished_at` in that oblast.
+- Result: 🔴 **there was an alert** (with start time, end time and duration)
+  or 🟢 **there was no alert**.
+
+### 3. 🔥 Busiest days
+For each oblast — its **hardest day** over the whole period.
+- Criterion: **time under alert** during a day (hours when the oblast had at
+  least one active alert).
+- Shows: a table for all oblasts (sorted from the busiest), a chart of the
+  top-10 busiest days, an oblast comparison, and an activity map.
+
+---
+
+## 📂 Project structure
 
 ```
-кодик/
-├── main.py             # весь код проекта (с комментариями)
-├── requirements.txt    # зависимости
-├── README.md           # этот файл
+air_alert_project/
+├── app.py                     # AlertApp class — Streamlit UI (3 tabs)
 ├── data/
-│   └── official_data_en.csv   # исходные данные
-└── output/             # сюда сохраняются графики (создаётся автоматически)
-    ├── 01_alerts_per_day.png
-    ├── 02_avg_duration_per_day.png
-    ├── 03_heatmap_hour_weekday.png
-    ├── 04_oblast_comparison.png
-    └── 05_forecast.png
+│   └── official_data_en.csv   # source data
+├── models/
+│   └── model.pkl              # trained model (created automatically)
+├── src/
+│   ├── data_processing.py     # DataProcessor class — data and the hourly grid
+│   ├── forecasting.py         # AlertForecaster class — model and forecast
+│   ├── historical_analysis.py # HistoricalAnalyzer class — fact check, busiest days
+│   └── visualization.py       # Visualizer class — Plotly charts
+├── outputs/                   # reserved for exports
+├── requirements.txt
+└── README.md
 ```
 
-## Формат данных (`data/official_data_en.csv`)
+### 🏛️ Architecture (OOP)
+The project is built from classes with a clear separation of concerns:
 
-| Колонка | Описание |
-|---|---|
-| `oblast` | Область |
-| `raion` | Район |
-| `hromada` | Громада |
-| `level` | Уровень тревоги (oblast / raion / hromada) |
-| `started_at` | Время начала (UTC, ISO-8601) |
-| `finished_at` | Время окончания (UTC, ISO-8601) |
-| `source` | Источник данных |
+| Class | File | Responsibility |
+|---|---|---|
+| `DataProcessor` | `data_processing.py` | loading, cleaning, hourly grid, features, statistics |
+| `AlertForecaster` | `forecasting.py` | training/loading the model, `predict_proba`, explanations |
+| `HistoricalAnalyzer` | `historical_analysis.py` | alert fact check, busiest days |
+| `Visualizer` | `visualization.py` | building interactive charts |
+| `AlertApp` | `app.py` | wires the objects together and renders the UI (3 tabs) |
 
-## Установка и запуск
+The trained model is saved as a whole `AlertForecaster` object via `joblib`
+(`AlertForecaster.get_or_train(...)`), and is loaded from disk on startup.
 
-Нужен Python 3.10+ (протестировано на 3.14).
+---
+
+## 🚀 Running
+
+Requires **Python 3.10+** (tested on 3.14).
 
 ```bash
-# 1. Перейти в папку проекта
-cd кодик
+# 1. Go to the project folder
+cd air_alert_project
 
-# 2. (рекомендуется) создать виртуальное окружение
+# 2. (recommended) virtual environment
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-# 3. Установить зависимости
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Запустить
-python main.py
+# 4. Run
+streamlit run app.py
 ```
 
-После запуска:
-- ключевые цифры и итоги печатаются в консоль;
-- 5 графиков сохраняются в папку `output/`.
+A browser opens at `http://localhost:8501`.
 
-## Как сменить регион
+> **The first run** builds the hourly grid and trains the model (~1–2 minutes),
+> then the model is saved to `models/model.pkl` and subsequent runs start
+> instantly. To retrain — delete `models/model.pkl`.
 
-Откройте `main.py` и поменяйте **одну** строку в блоке настроек:
+### Open in PyCharm / VS Code
+Open the `air_alert_project` folder as a project, select an interpreter with the
+dependencies installed, and run `streamlit run app.py` in the terminal.
+In PyCharm you can create a **Python** run configuration: *module name* =
+`streamlit`, *parameters* = `run app.py`, working directory = project root.
 
-```python
-TARGET_OBLAST = "Kyivska oblast"   # например: "Kharkivska oblast", "Kyiv City"
-```
+---
 
-Полный список доступных областей печатается при каждом запуске
-(раздел «Список областей в данных»). Графики 1–3 и прогноз пересчитаются
-для выбранного региона; график сравнения областей (№4) всегда строится
-по всей стране.
+## 🧠 How the forecast works (mode 1)
 
-## Другие настройки (вверху `main.py`)
+1. **From a log to an hourly grid.** The source CSV is a list of events
+   (each alert has a start and an end). We turn it into a table
+   "(oblast, specific hour) → was there an alert (0/1)" — ~900,000 observations.
+2. **Features:** `hour`, `day_of_week`, `month`, `year`, `oblast`,
+   `recent_cnt` (alerts in the last 7 days), `recent_dur` (average duration over
+   7 days).
+3. **Model:** `HistGradientBoostingClassifier` (gradient boosting, scikit-learn).
+   Binary classification `0/1`, probability via `predict_proba()`. Quality on a
+   time-held-out set is ROC-AUC ≈ 0.90.
+4. **Future date.** Real recent activity cannot be known for the future, so the
+   `recent_*` features are taken as the **seasonal average** (by month).
+5. **Risk level:** `p < 33%` — 🟢 low, `33–66%` — 🟠 medium, `> 66%` — 🔴 high.
 
-| Переменная | Назначение | По умолчанию |
-|---|---|---|
-| `MAX_DURATION_HOURS` | Порог длительности-выброса | `24` |
-| `MA_WINDOW` | Окно скользящего среднего, дней | `7` |
-| `FORECAST_DAYS` | Горизонт прогноза, дней | `7` |
-| `TRAIN_WINDOW` | Сколько последних дней берётся для тренда | `30` |
-| `LOCAL_TZ` | Часовой пояс для анализа по часам/дням | `Europe/Kyiv` |
+---
 
-## Результаты анализа
+## ⚙️ Optimization and performance
 
-**Проблему**, которую решает проект: вручную в потоке из сотен тысяч событий
-не разобраться. Скрипт отвечает на вопросы «когда тревог больше», «в какие
-часы и дни», «какие области страдают сильнее» и «куда движется тренд».
+- **Streamlit caching** (`@st.cache_resource`): data, the hourly grid, the model
+  and summary tables are loaded once per session.
+- **Date preprocessing** at load time (`format="ISO8601"`, UTC → local
+  conversion, precomputed `start_local` / `end_local`).
+- **Vectorized computations** (numpy) for the hourly grid and the
+  "busiest days" calculation — no slow loops.
+- The ready model is cached to disk (`joblib`).
 
-**Выводы**, которые можно получить:
-- динамика по дням и «волны» активности;
-- самые напряжённые дни (пики массированных атак);
-- суточный ритм тревог по часам;
-- сравнение нагрузки по областям;
-- направление краткосрочного тренда.
+---
 
-**Ограничения модели прогноза:**
-- линейная регрессия по последним днях — очень простая модель: она
-  показывает направление тренда, но не предсказывает конкретные атаки
-  (события зависят от военной обстановки, а не от математики);
-- не учитываются сезонность и внешние факторы;
-- длительность отдельных тревог может быть завышена из-за неточной
-  фиксации окончания (такие выбросы исключаются из средней длительности);
-- прогноз — это ориентир, а не гарантия.
+## ⚠️ Limitations
 
-## Зависимости
+- The model reflects **historical patterns**, not the real military situation,
+  and **does not predict specific attacks**. It is an analytical tool, not an
+  alerting system.
+- The future forecast relies on **seasonal averages**, since actual recent
+  activity cannot be known in advance.
+- External factors (decisions of the parties, weather, target types) are not
+  taken into account.
+- In the data, alerts of different levels (`oblast` / `raion` / `hromada`)
+  overlap each other, so mode 3 uses **time under alert** (union of intervals,
+  ≤ 24 h/day) rather than a plain sum of durations (which would give unrealistic
+  hundreds of hours per day).
+- Individual alert durations are sometimes overstated (outliers > 24 h are
+  flagged and capped).
 
-`pandas`, `numpy`, `matplotlib`, `seaborn`, `scikit-learn`, `tzdata`
-(точные версии — в `requirements.txt`).
+> For real alert signals, rely only on official alerting sources.
+
+---
+
+## 🧰 Stack
+
+`Python` · `Streamlit` · `pandas` · `numpy` · `scikit-learn` · `Plotly` · `joblib`

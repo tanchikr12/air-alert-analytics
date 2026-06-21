@@ -2,18 +2,18 @@
 """
 forecasting.py
 ==============
-Класс AlertForecaster — модель машинного обучения и вероятностный прогноз.
+AlertForecaster class — the machine-learning model and probabilistic forecast.
 
-Задача — БИНАРНАЯ КЛАССИФИКАЦИЯ:
-    0 — в этот час тревоги нет
-    1 — в этот час тревога есть
+The task is BINARY CLASSIFICATION:
+    0 — no alert during this hour
+    1 — an alert is active during this hour
 
-Алгоритм: Gradient Boosting (HistGradientBoostingClassifier) — быстрый и точный
-градиентный бустинг, который работает с категориальным признаком «область»
-напрямую и выдаёт вероятность через predict_proba().
+Algorithm: Gradient Boosting (HistGradientBoostingClassifier) — a fast and
+accurate gradient boosting that works with the categorical "oblast" feature
+directly and outputs a probability via predict_proba().
 
-Обученный объект целиком сохраняется в models/model.pkl через joblib и при
-следующих запусках просто загружается.
+The whole trained object is saved to models/model.pkl with joblib and simply
+loaded again on subsequent runs.
 """
 
 import os
@@ -32,24 +32,24 @@ MODEL_PATH = os.path.join(
 
 
 class AlertForecaster:
-    """Модель прогноза вероятности тревоги + справочные таблицы для объяснений."""
+    """Alert-probability model plus reference tables used for explanations."""
 
-    # Признаки, на которых учится модель
+    # Features the model is trained on
     FEATURES = ["hour", "day_of_week", "month", "year",
                 "recent_cnt", "recent_dur", "oblast"]
 
-    MONTHS_RU = {1: "январе", 2: "феврале", 3: "марте", 4: "апреле",
-                 5: "мае", 6: "июне", 7: "июле", 8: "августе",
-                 9: "сентябре", 10: "октябре", 11: "ноябре", 12: "декабре"}
+    MONTHS_EN = {1: "January", 2: "February", 3: "March", 4: "April",
+                 5: "May", 6: "June", 7: "July", 8: "August",
+                 9: "September", 10: "October", 11: "November", 12: "December"}
 
-    DAYS_RU = ["в понедельник", "во вторник", "в среду", "в четверг",
-               "в пятницу", "в субботу", "в воскресенье"]
+    DAYS_EN = ["on Monday", "on Tuesday", "on Wednesday", "on Thursday",
+               "on Friday", "on Saturday", "on Sunday"]
 
     def __init__(self):
         self.model = None
         self.oblast_list = None
         self.auc = None
-        # справочные таблицы заполняются в train()
+        # reference tables are filled in train()
         self.rate_hour = self.rate_month = self.rate_dow = {}
         self.base_rate = self.month_avg_rate = self.dow_avg_rate = {}
         self.monthly_recent = self.oblast_recent = {}
@@ -57,10 +57,10 @@ class AlertForecaster:
         self.min_date = self.max_date = None
 
     # =================================================================
-    # Обучение
+    # Training
     # =================================================================
     def train(self, grid: pd.DataFrame, df_clean: pd.DataFrame) -> "AlertForecaster":
-        """Обучает классификатор и строит справочные таблицы. Возвращает self."""
+        """Trains the classifier and builds the reference tables. Returns self."""
         self.oblast_list = sorted(df_clean["oblast"].unique())
 
         data = grid.sort_values("ts").reset_index(drop=True)
@@ -68,7 +68,7 @@ class AlertForecaster:
         X["oblast"] = pd.Categorical(X["oblast"], categories=self.oblast_list)
         y = data["alert"].astype(int)
 
-        # Разделение по ВРЕМЕНИ: учимся на прошлом, проверяем на более позднем.
+        # Split by TIME: train on the past, validate on the more recent part.
         cut = int(len(data) * 0.8)
         self.model = HistGradientBoostingClassifier(
             categorical_features="from_dtype",
@@ -78,14 +78,14 @@ class AlertForecaster:
         self.auc = float(roc_auc_score(y.iloc[cut:],
                                        self.model.predict_proba(X.iloc[cut:])[:, 1]))
 
-        # Финальная модель — на всех данных (для боевого прогноза)
+        # Final model — trained on all data (for production forecasting)
         self.model.fit(X, y)
 
         self._build_reference_tables(grid, df_clean)
         return self
 
     def _build_reference_tables(self, grid: pd.DataFrame, df_clean: pd.DataFrame) -> None:
-        """Таблицы для подстановки признаков будущей даты и для объяснений."""
+        """Tables to fill in features of a future date and to build explanations."""
         rate_hour = grid.groupby(["oblast", "hour"])["alert"].mean()
         rate_month = grid.groupby(["oblast", "month"])["alert"].mean()
         rate_dow = grid.groupby(["oblast", "day_of_week"])["alert"].mean()
@@ -97,7 +97,7 @@ class AlertForecaster:
         self.month_avg_rate = rate_month.groupby(level=0).mean().to_dict()
         self.dow_avg_rate = rate_dow.groupby(level=0).mean().to_dict()
 
-        # Сезонная оценка recent-признаков (среднее по область+месяц).
+        # Seasonal estimate of the recent-* features (mean by oblast+month).
         monthly = grid.groupby(["oblast", "month"])[["recent_cnt", "recent_dur"]].mean()
         oblast_r = grid.groupby("oblast")[["recent_cnt", "recent_dur"]].mean()
         self.monthly_recent = {k: (float(v["recent_cnt"]), float(v["recent_dur"]))
@@ -108,7 +108,7 @@ class AlertForecaster:
         self.avg_duration = (df_clean[df_clean["duration_ok"]]
                              .groupby("oblast")["duration_min"].mean().to_dict())
 
-        # Ожидаемое число тревог в день (среднее по область+месяц и по области)
+        # Expected number of alerts per day (mean by oblast+month and by oblast)
         daily_cnt = df_clean.groupby(["oblast", "date"]).size().reset_index(name="c")
         daily_cnt["month"] = daily_cnt["date"].dt.month
         self.monthly_daily_count = daily_cnt.groupby(["oblast", "month"])["c"].mean().to_dict()
@@ -118,7 +118,7 @@ class AlertForecaster:
         self.max_date = grid["date"].max()
 
     # =================================================================
-    # Сохранение / загрузка / «обучить или загрузить»
+    # Save / load / "train or load"
     # =================================================================
     def save(self, path: str = MODEL_PATH) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -128,33 +128,33 @@ class AlertForecaster:
     def load(cls, path: str = MODEL_PATH) -> "AlertForecaster":
         obj = joblib.load(path)
         if not isinstance(obj, cls):
-            raise TypeError("Файл модели несовместим с AlertForecaster")
+            raise TypeError("Model file is not compatible with AlertForecaster")
         return obj
 
     @classmethod
     def get_or_train(cls, grid: pd.DataFrame, df_clean: pd.DataFrame,
                      path: str = MODEL_PATH, force: bool = False) -> "AlertForecaster":
-        """Загружает готовую модель или обучает новую и сохраняет."""
+        """Loads a ready model or trains a new one and saves it."""
         if os.path.exists(path) and not force:
             try:
                 return cls.load(path)
             except Exception:
-                pass  # формат устарел/файл повреждён — переобучим
+                pass  # outdated format / corrupted file — retrain
         obj = cls().train(grid, df_clean)
         obj.save(path)
         return obj
 
     # =================================================================
-    # Прогноз вероятности
+    # Probability forecast
     # =================================================================
     def _recent_for(self, oblast: str, month: int):
-        """Признаки recent_*: сезонная оценка -> среднее по области."""
+        """recent_* features: seasonal estimate -> fall back to oblast mean."""
         if (oblast, month) in self.monthly_recent:
             return self.monthly_recent[(oblast, month)]
         return self.oblast_recent.get(oblast, (0.0, 0.0))
 
     def _feature_frame(self, oblast: str, moments) -> pd.DataFrame:
-        """Таблица признаков для одного или нескольких моментов времени."""
+        """Feature table for one or several moments in time."""
         rows = []
         for m in moments:
             rc, rd = self._recent_for(oblast, m.month)
@@ -166,18 +166,18 @@ class AlertForecaster:
         return X
 
     def predict_proba(self, oblast: str, moment: dt.datetime) -> float:
-        """Вероятность тревоги (0..1) для конкретного момента времени."""
+        """Alert probability (0..1) for a specific moment in time."""
         X = self._feature_frame(oblast, [moment])
         return float(self.model.predict_proba(X)[0, 1])
 
     def predict_day_curve(self, oblast: str, day: dt.date) -> np.ndarray:
-        """Вероятность тревоги по каждому из 24 часов выбранного дня."""
+        """Alert probability for each of the 24 hours of the selected day."""
         moments = [dt.datetime(day.year, day.month, day.day, h) for h in range(24)]
         X = self._feature_frame(oblast, moments)
         return self.model.predict_proba(X)[:, 1]
 
     def expected_daily_count(self, oblast: str, day: dt.date) -> float:
-        """Предполагаемое количество тревог за день (сезонная оценка по месяцу)."""
+        """Expected number of alerts for the day (seasonal estimate by month)."""
         val = self.monthly_daily_count.get((oblast, day.month))
         if val is None:
             val = self.oblast_daily_count.get(oblast, 0.0)
@@ -185,45 +185,45 @@ class AlertForecaster:
 
     @staticmethod
     def risk_level(prob: float) -> dict:
-        """Переводит вероятность в уровень риска и цвет для интерфейса."""
+        """Maps a probability to a risk level and a color for the UI."""
         if prob >= 0.66:
-            return {"label": "Высокий", "color": "#dc2626", "emoji": "🔴"}
+            return {"label": "High", "color": "#dc2626", "emoji": "🔴"}
         if prob >= 0.33:
-            return {"label": "Средний", "color": "#f59e0b", "emoji": "🟠"}
-        return {"label": "Низкий", "color": "#16a34a", "emoji": "🟢"}
+            return {"label": "Medium", "color": "#f59e0b", "emoji": "🟠"}
+        return {"label": "Low", "color": "#16a34a", "emoji": "🟢"}
 
     def explain(self, oblast: str, moment: dt.datetime) -> list:
-        """Человекочитаемые причины прогноза (сравнение с типичным уровнем)."""
+        """Human-readable reasons for the forecast (compared to the typical level)."""
         hour, month, dow = moment.hour, moment.month, moment.weekday()
         base = self.base_rate.get(oblast, 0.0)
         reasons = []
 
         r_hour = self.rate_hour.get((oblast, hour), base)
         if base > 0 and r_hour >= base * 1.12:
-            reasons.append(f"в этом регионе тревоги около {hour:02d}:00 случаются чаще обычного")
+            reasons.append(f"in this region alerts around {hour:02d}:00 happen more often than usual")
         elif base > 0 and r_hour <= base * 0.88:
-            reasons.append(f"в районе {hour:02d}:00 тревоги здесь относительно редки")
+            reasons.append(f"around {hour:02d}:00 alerts here are relatively rare")
 
         r_month = self.rate_month.get((oblast, month), base)
         m_avg = self.month_avg_rate.get(oblast, base)
         if m_avg > 0 and r_month >= m_avg * 1.1:
-            reasons.append(f"исторически в {self.MONTHS_RU[month]} частота тревог выше средней")
+            reasons.append(f"historically, alert frequency in {self.MONTHS_EN[month]} is above average")
         elif m_avg > 0 and r_month <= m_avg * 0.9:
-            reasons.append(f"в {self.MONTHS_RU[month]} тревоги фиксировались реже обычного")
+            reasons.append(f"in {self.MONTHS_EN[month]} alerts were recorded less often than usual")
 
         r_dow = self.rate_dow.get((oblast, dow), base)
         d_avg = self.dow_avg_rate.get(oblast, base)
         if d_avg > 0 and r_dow >= d_avg * 1.1:
-            reasons.append(f"{self.DAYS_RU[dow]} в похожие периоды тревог было больше")
+            reasons.append(f"{self.DAYS_EN[dow]} there have been more alerts in similar periods")
 
         rc, _ = self._recent_for(oblast, month)
         if rc >= 25:
-            reasons.append("в этот сезон в регионе фиксировалось много тревог подряд")
+            reasons.append("this season the region recorded many alerts in a row")
 
         avg_dur = self.avg_duration.get(oblast)
         if avg_dur:
-            reasons.append(f"средняя длительность тревоги в регионе ≈ {avg_dur:.0f} мин")
+            reasons.append(f"average alert duration in the region ≈ {avg_dur:.0f} min")
 
         if not reasons:
-            reasons.append("прогноз построен по исторической частоте тревог в регионе")
+            reasons.append("the forecast is based on the historical alert frequency in the region")
         return reasons[:4]

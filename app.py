@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-app.py — аналитическая система «Воздушные тревоги Украины» (ООП-версия)
-======================================================================
-Запуск:  streamlit run app.py
+app.py — "Ukraine Air-Raid Alerts" analytics system (OOP version)
+=================================================================
+Run:  streamlit run app.py
 
-Архитектура (ООП):
-  • DataProcessor      — данные и почасовая сетка;
-  • AlertForecaster    — модель и вероятностный прогноз;
-  • HistoricalAnalyzer — проверка факта и самые напряжённые дни;
-  • Visualizer         — графики;
-  • AlertApp           — интерфейс Streamlit (три вкладки).
+Architecture (OOP):
+  • DataProcessor      — data and the hourly grid;
+  • AlertForecaster    — model and probabilistic forecast;
+  • HistoricalAnalyzer — fact check and busiest days;
+  • Visualizer         — charts;
+  • AlertApp           — Streamlit UI (three tabs).
 """
 
 import datetime as dt
@@ -25,9 +25,9 @@ from src.visualization import Visualizer
 
 @st.cache_resource(show_spinner=False)
 def build_components(data_path: str):
-    """Тяжёлая инициализация (один раз за сессию, кэшируется Streamlit)."""
+    """Heavy initialization (runs once per session, cached by Streamlit)."""
     proc = DataProcessor(data_path).prepare()
-    forecaster = AlertForecaster.get_or_train(proc.grid, proc.df)  # обучит при 1-м запуске
+    forecaster = AlertForecaster.get_or_train(proc.grid, proc.df)  # trains on first run
     analyzer = HistoricalAnalyzer(proc.df)
     viz = Visualizer(proc)
     return {
@@ -39,7 +39,7 @@ def build_components(data_path: str):
 
 
 class AlertApp:
-    """Streamlit-приложение: связывает доменные объекты и рисует интерфейс."""
+    """Streamlit app: wires the domain objects together and renders the UI."""
 
     CSS = """
     <style>
@@ -55,12 +55,12 @@ class AlertApp:
     </style>"""
 
     def __init__(self, data_path: str = DEFAULT_DATA_PATH):
-        st.set_page_config(page_title="Воздушные тревоги Украины",
+        st.set_page_config(page_title="Ukraine Air-Raid Alerts",
                            page_icon="🛡️", layout="wide")
         st.markdown(self.CSS, unsafe_allow_html=True)
 
-        with st.spinner("Загружаю данные и готовлю модель… "
-                        "(первый запуск ~1–2 минуты, дальше — мгновенно)"):
+        with st.spinner("Loading data and preparing the model… "
+                        "(first run ~1–2 minutes, instant afterwards)"):
             c = build_components(data_path)
         self.proc = c["proc"]
         self.forecaster = c["forecaster"]
@@ -77,17 +77,17 @@ class AlertApp:
         self.data_max = self.forecaster.max_date.date()
 
     # =================================================================
-    # Точка входа
+    # Entry point
     # =================================================================
     def run(self) -> None:
         self._render_sidebar()
-        st.title("🛡️ Аналитическая система воздушных тревог Украины")
-        st.caption("Основано на реальных исторических данных. Три режима: прогноз "
-                   "на 30 дней, проверка факта по истории и самые напряжённые дни.")
+        st.title("🛡️ Ukraine Air-Raid Alerts — Analytics System")
+        st.caption("Based on real historical data. Three modes: a 30-day forecast, "
+                   "a historical fact check, and the busiest days.")
         tab1, tab2, tab3 = st.tabs([
-            "🔮 Прогноз на 30 дней",
-            "🔎 Историческая проверка",
-            "🔥 Самые напряжённые дни"])
+            "🔮 30-day forecast",
+            "🔎 Historical check",
+            "🔥 Busiest days"])
         with tab1:
             self._render_forecast_tab()
         with tab2:
@@ -96,17 +96,17 @@ class AlertApp:
             self._render_busiest_tab()
 
     # =================================================================
-    # Переиспользуемые элементы
+    # Reusable elements
     # =================================================================
     def _render_sidebar(self) -> None:
-        st.sidebar.title("ℹ️ О системе")
+        st.sidebar.title("ℹ️ About")
         st.sidebar.markdown(
-            f"**Период данных:** {self.data_min} — {self.data_max}\n\n"
-            f"**Областей:** {len(self.oblasts)}\n\n"
-            f"**Качество модели (ROC-AUC):** {self.forecaster.auc:.3f}")
+            f"**Data period:** {self.data_min} — {self.data_max}\n\n"
+            f"**Oblasts:** {len(self.oblasts)}\n\n"
+            f"**Model quality (ROC-AUC):** {self.forecaster.auc:.3f}")
         st.sidebar.markdown("---")
-        st.sidebar.caption("⚠️ Это аналитический инструмент, а не система оповещения. "
-                           "Реальные тревоги — только в официальных источниках.")
+        st.sidebar.caption("⚠️ This is an analytical tool, not an alerting system. "
+                           "For real alerts, rely only on official sources.")
 
     @staticmethod
     def _gauge(prob: float, color: str) -> None:
@@ -124,30 +124,30 @@ class AlertApp:
     def _region_metrics(self, oblast: str) -> None:
         s = self.proc.region_summary(oblast)
         c = st.columns(5)
-        c[0].metric("Всего тревог", f"{s['total_alerts']:,}")
-        c[1].metric("В среднем в день", f"{s['avg_per_day']:.1f}")
-        c[2].metric("Медианная длительность", f"{s['median_duration']:.0f} мин")
-        c[3].metric("Доля «тревожных» часов", f"{s['hourly_rate']*100:.0f}%")
-        c[4].metric("Пиковый час", f"{s['peak_hour']:02d}:00")
+        c[0].metric("Total alerts", f"{s['total_alerts']:,}")
+        c[1].metric("Average per day", f"{s['avg_per_day']:.1f}")
+        c[2].metric("Median duration", f"{s['median_duration']:.0f} min")
+        c[3].metric("Share of alert hours", f"{s['hourly_rate']*100:.0f}%")
+        c[4].metric("Peak hour", f"{s['peak_hour']:02d}:00")
 
     # =================================================================
-    # Вкладка 1. Прогноз на будущее (30 дней)
+    # Tab 1. Future forecast (30 days)
     # =================================================================
     def _render_forecast_tab(self) -> None:
-        st.subheader("Прогноз вероятности тревоги на ближайшие 30 дней")
+        st.subheader("Alert probability forecast for the next 30 days")
         today = dt.date.today()
         horizon = today + dt.timedelta(days=30)
-        st.caption(f"Доступный диапазон: **{today:%d.%m.%Y} — {horizon:%d.%m.%Y}** "
-                   f"(сегодня + 30 дней).")
+        st.caption(f"Available range: **{today:%d.%m.%Y} — {horizon:%d.%m.%Y}** "
+                   f"(today + 30 days).")
 
         cc = st.columns([1.2, 1, 1, 0.9])
-        oblast = cc[0].selectbox("🗺️ Область", self.oblasts,
+        oblast = cc[0].selectbox("🗺️ Oblast", self.oblasts,
                                  index=self.oblasts.index(self.default_oblast), key="f_obl")
-        f_date = cc[1].date_input("📆 Дата", value=today, min_value=today,
+        f_date = cc[1].date_input("📆 Date", value=today, min_value=today,
                                   max_value=horizon, key="f_date")
-        f_time = cc[2].time_input("🕒 Время", value=dt.time(22, 0), key="f_time")
+        f_time = cc[2].time_input("🕒 Time", value=dt.time(22, 0), key="f_time")
         cc[3].markdown("<br>", unsafe_allow_html=True)
-        if cc[3].button("🔮 Прогноз", type="primary", width="stretch", key="f_btn"):
+        if cc[3].button("🔮 Forecast", type="primary", width="stretch", key="f_btn"):
             st.session_state["did_forecast"] = True
 
         if st.session_state.get("did_forecast"):
@@ -157,110 +157,110 @@ class AlertApp:
             exp_cnt = self.forecaster.expected_daily_count(oblast, f_date)
             reasons = self.forecaster.explain(oblast, moment)
 
-            st.markdown("#### Результат")
+            st.markdown("#### Result")
             a, b = st.columns([1, 1.3])
             with a:
                 st.markdown(f"""
                 <div class="card" style="border-left:8px solid {risk['color']}">
                     <div class="big" style="color:{risk['color']}">{prob*100:.0f}%</div>
                     <div class="sub" style="color:{risk['color']}">
-                        {risk['emoji']} Риск: {risk['label']}</div>
+                        {risk['emoji']} Risk: {risk['label']}</div>
                     <div class="moment">{oblast} · {moment:%d.%m.%Y} · {moment:%H:%M}
-                        <br>Предполагаемое число тревог за день: <b>≈ {exp_cnt:.0f}</b></div>
+                        <br>Estimated number of alerts that day: <b>≈ {exp_cnt:.0f}</b></div>
                 </div>""", unsafe_allow_html=True)
                 self._gauge(prob, risk["color"])
             with b:
                 reasons_html = "".join(f"<li>{r}</li>" for r in reasons)
-                st.markdown(f'<div class="reason-box"><b>Причины:</b>'
+                st.markdown(f'<div class="reason-box"><b>Reasons:</b>'
                             f'<ul>{reasons_html}</ul></div>', unsafe_allow_html=True)
                 probs = self.forecaster.predict_day_curve(oblast, f_date)
                 st.plotly_chart(self.viz.hour_probability(probs, f_time.hour),
                                 width="stretch")
             st.divider()
         else:
-            st.info("👆 Выберите область, дату и время, затем нажмите «🔮 Прогноз».")
+            st.info("👆 Pick an oblast, date and time, then press “🔮 Forecast”.")
 
-        st.markdown(f"##### 📊 Статистика региона: {oblast}")
+        st.markdown(f"##### 📊 Region statistics: {oblast}")
         self._region_metrics(oblast)
-        with st.expander("📈 История тревог по дням и тепловая карта"):
+        with st.expander("📈 Alert history by day and heatmap"):
             st.plotly_chart(self.viz.daily_counts(oblast), width="stretch")
             st.plotly_chart(self.viz.heatmap(oblast), width="stretch")
 
     # =================================================================
-    # Вкладка 2. Историческая проверка
+    # Tab 2. Historical check
     # =================================================================
     def _render_history_tab(self) -> None:
-        st.subheader("Была ли тревога в конкретный момент? (по реальным данным)")
+        st.subheader("Was there an alert at a specific moment? (from real data)")
         inv = self.analyzer.INVASION_START
-        st.caption(f"Диапазон проверки: **{inv:%d.%m.%Y} — {self.data_max:%d.%m.%Y}** "
-                   f"(от начала вторжения до конца данных).")
+        st.caption(f"Check range: **{inv:%d.%m.%Y} — {self.data_max:%d.%m.%Y}** "
+                   f"(from the start of the invasion to the end of the data).")
 
         cc = st.columns([1.2, 1, 1, 0.9])
-        oblast = cc[0].selectbox("🗺️ Область", self.oblasts,
+        oblast = cc[0].selectbox("🗺️ Oblast", self.oblasts,
                                  index=self.oblasts.index(self.default_oblast), key="h_obl")
-        h_date = cc[1].date_input("📆 Дата", value=self.data_max, min_value=inv,
+        h_date = cc[1].date_input("📆 Date", value=self.data_max, min_value=inv,
                                   max_value=self.data_max, key="h_date")
-        h_time = cc[2].time_input("🕒 Время", value=dt.time(22, 0), key="h_time")
+        h_time = cc[2].time_input("🕒 Time", value=dt.time(22, 0), key="h_time")
         cc[3].markdown("<br>", unsafe_allow_html=True)
-        go_check = cc[3].button("🔎 Проверить", type="primary", width="stretch", key="h_btn")
+        go_check = cc[3].button("🔎 Check", type="primary", width="stretch", key="h_btn")
 
         if not go_check:
-            st.info("👆 Выберите область, дату и время, затем нажмите «🔎 Проверить».")
+            st.info("👆 Pick an oblast, date and time, then press “🔎 Check”.")
             return
 
         moment = dt.datetime.combine(h_date, h_time)
         res = self.analyzer.check_alert_at(oblast, moment)
         fmt = self.analyzer.format_duration
-        st.markdown("#### Результат проверки")
+        st.markdown("#### Check result")
         if res["was_alert"]:
-            extra = (f" (одновременно активных тревог: {res['overlap_count']})"
+            extra = (f" (simultaneously active alerts: {res['overlap_count']})"
                      if res["overlap_count"] > 1 else "")
             st.markdown(f"""
             <div class="card" style="border-left:8px solid #dc2626">
-                <div class="big" style="color:#dc2626">🔴 Тревога была: ДА</div>
+                <div class="big" style="color:#dc2626">🔴 Alert: YES</div>
                 <div class="moment">{oblast} · {moment:%d.%m.%Y %H:%M}{extra}</div>
             </div>""", unsafe_allow_html=True)
             m = st.columns(3)
-            m[0].metric("🟢 Начало", res["started"].strftime("%d.%m.%Y %H:%M"))
-            m[1].metric("🔴 Окончание", res["finished"].strftime("%d.%m.%Y %H:%M"))
-            m[2].metric("⏱️ Длительность", fmt(res["duration_min"]))
+            m[0].metric("🟢 Started", res["started"].strftime("%d.%m.%Y %H:%M"))
+            m[1].metric("🔴 Finished", res["finished"].strftime("%d.%m.%Y %H:%M"))
+            m[2].metric("⏱️ Duration", fmt(res["duration_min"]))
         else:
             st.markdown(f"""
             <div class="card" style="border-left:8px solid #16a34a">
-                <div class="big" style="color:#16a34a">🟢 Тревоги не было: НЕТ</div>
+                <div class="big" style="color:#16a34a">🟢 No alert: NO</div>
                 <div class="moment">{oblast} · {moment:%d.%m.%Y %H:%M}</div>
             </div>""", unsafe_allow_html=True)
-            st.caption("В данных нет тревоги, которая охватывала бы этот момент "
-                       "в выбранной области.")
+            st.caption("The data has no alert that covered this moment "
+                       "in the selected oblast.")
 
     # =================================================================
-    # Вкладка 3. Самые напряжённые дни
+    # Tab 3. Busiest days
     # =================================================================
     def _render_busiest_tab(self) -> None:
-        st.subheader("Самый тяжёлый день каждой области за весь период войны")
-        st.caption("Критерий: день с максимальным **временем под тревогой** "
-                   "(объединение интервалов всех тревог, ≤ 24 ч/день).")
+        st.subheader("The busiest day of each oblast over the whole war period")
+        st.caption("Criterion: the day with the maximum **time under alert** "
+                   "(union of all alert intervals, ≤ 24 h/day).")
         fmt = self.analyzer.format_duration
 
         worst = self.busiest.iloc[0]
         m = st.columns(3)
-        m[0].metric("🥇 Самая тяжёлая область", worst["oblast"])
-        m[1].metric("📆 День", worst["date"].strftime("%d.%m.%Y"))
-        m[2].metric("⏱️ Под тревогой", fmt(worst["total_min"]))
+        m[0].metric("🥇 Busiest oblast", worst["oblast"])
+        m[1].metric("📆 Day", worst["date"].strftime("%d.%m.%Y"))
+        m[2].metric("⏱️ Under alert", fmt(worst["total_min"]))
 
         st.plotly_chart(self.viz.top_busiest(self.top10), width="stretch")
 
-        st.markdown("##### Таблица: самый напряжённый день по каждой области")
+        st.markdown("##### Table: the busiest day for each oblast")
         table = self.busiest.copy()
-        table.insert(0, "№", range(1, len(table) + 1))
-        table["Дата"] = table["date"].dt.strftime("%d.%m.%Y")
-        table["Под тревогой"] = table["total_min"].map(fmt)
-        table = table.rename(columns={"oblast": "Область", "count": "Кол-во тревог"})
+        table.insert(0, "#", range(1, len(table) + 1))
+        table["Date"] = table["date"].dt.strftime("%d.%m.%Y")
+        table["Under alert"] = table["total_min"].map(fmt)
+        table = table.rename(columns={"oblast": "Oblast", "count": "Alert count"})
         st.dataframe(
-            table[["№", "Область", "Дата", "Под тревогой", "Кол-во тревог"]],
+            table[["#", "Oblast", "Date", "Under alert", "Alert count"]],
             hide_index=True, width="stretch")
 
-        st.markdown("##### Сравнение областей и карта активности")
+        st.markdown("##### Oblast comparison and activity map")
         cc = st.columns(2)
         with cc[0]:
             st.plotly_chart(self.viz.oblast_bar(self.stats, worst["oblast"]),
@@ -270,5 +270,5 @@ class AlertApp:
                             width="stretch")
 
 
-# Streamlit выполняет файл как скрипт — просто создаём приложение и запускаем.
+# Streamlit runs the file as a script — just create the app and launch it.
 AlertApp().run()

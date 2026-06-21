@@ -2,12 +2,12 @@
 """
 historical_analysis.py
 ======================
-Класс HistoricalAnalyzer — анализ РЕАЛЬНЫХ исторических данных (без прогноза).
+HistoricalAnalyzer class — analysis of the REAL historical data (no forecast).
 
-Используется двумя вкладками интерфейса:
-  • «Историческая проверка» — была ли тревога в конкретный момент времени;
-  • «Самые напряжённые дни» — для каждой области день с максимальным
-    временем под тревогой.
+Used by two UI tabs:
+  • "Historical check"  — was there an alert at a specific moment in time;
+  • "Busiest days"      — for each oblast, the day with the maximum amount of
+    time spent under alert.
 """
 
 import datetime as dt
@@ -16,29 +16,29 @@ import pandas as pd
 
 
 class HistoricalAnalyzer:
-    """Фактологический анализ по данным (проверка момента + напряжённые дни)."""
+    """Fact-based analysis of the data (moment check + busiest days)."""
 
-    # Дата начала полномасштабного вторжения — нижняя граница для проверки
+    # Start date of the full-scale invasion — lower bound for the check
     INVASION_START = dt.date(2022, 2, 24)
     MAX_DURATION_HOURS = 24
-    _SEC_DAY = 86_400  # секунд в сутках
+    _SEC_DAY = 86_400  # seconds in a day
 
     def __init__(self, df: pd.DataFrame):
         self.df = df
-        self._daily_cache: pd.DataFrame | None = None  # ленивый кэш _daily_load
+        self._daily_cache: pd.DataFrame | None = None  # lazy cache for _daily_load
 
     # =================================================================
-    # Вкладка 2. Была ли тревога в выбранный момент?
+    # Tab 2. Was there an alert at the selected moment?
     # =================================================================
     def check_alert_at(self, oblast: str, moment: dt.datetime) -> dict:
         """
-        Проверяет, шла ли тревога в области `oblast` в момент `moment`
-        (местное время). Тревога активна, если start_local <= moment <= end_local.
+        Checks whether an alert was active in `oblast` at `moment` (local time).
+        An alert is active if start_local <= moment <= end_local.
 
-        Возвращает словарь:
-          was_alert=False                       — тревоги не было;
-          was_alert=True, started, finished,    — тревога была (показываем интервал
-          duration_min, overlap_count             с максимальной длительностью).
+        Returns a dict:
+          was_alert=False                       — there was no alert;
+          was_alert=True, started, finished,    — there was an alert (we show the
+          duration_min, overlap_count             interval with the longest duration).
         """
         sub = self.df[self.df["oblast"] == oblast]
         mask = (sub["start_local"] <= moment) & (sub["end_local"] >= moment)
@@ -56,19 +56,19 @@ class HistoricalAnalyzer:
         }
 
     # =================================================================
-    # Вкладка 3. Самые напряжённые дни
+    # Tab 3. Busiest days
     # =================================================================
     def _daily_load(self) -> pd.DataFrame:
         """
-        Для каждого (область, день) считает:
-          total_min — сколько МИНУТ в этот день область была под тревогой;
-          count     — сколько тревог было объявлено (записей за этот день).
+        For each (oblast, day) computes:
+          total_min — how many MINUTES that day the oblast was under alert;
+          count     — how many alerts were declared (records for that day).
 
-        В данных тревоги разных уровней (oblast/raion/hromada) накладываются
-        друг на друга, поэтому простая сумма длительностей даёт нереальные
-        значения (сотни часов в сутки). Мы берём ОБЪЕДИНЕНИЕ интервалов (union)
-        и разбиваем его по календарным дням — total_min ограничен 24 часами.
-        Результат кэшируется (считается один раз).
+        In the data, alerts of different levels (oblast/raion/hromada) overlap
+        each other, so a plain sum of durations gives unrealistic values
+        (hundreds of hours per day). We take the UNION of intervals and split it
+        by calendar day — total_min is capped at 24 hours.
+        The result is cached (computed only once).
         """
         if self._daily_cache is not None:
             return self._daily_cache
@@ -76,7 +76,7 @@ class HistoricalAnalyzer:
         df = self.df
         SEC_DAY = self._SEC_DAY
 
-        # Ограничиваем конец каждой тревоги сутками от начала (защита от выбросов)
+        # Cap the end of each alert at one day from its start (outlier protection)
         cap_end = np.minimum(
             df["end_local"].to_numpy(),
             (df["start_local"] + pd.Timedelta(hours=self.MAX_DURATION_HOURS)).to_numpy())
@@ -84,7 +84,7 @@ class HistoricalAnalyzer:
         s_sec = df["start_local"].to_numpy().astype("datetime64[s]").astype("int64")
         e_sec = cap_end.astype("datetime64[s]").astype("int64")
 
-        # --- 1. Векторизованное объединение пересекающихся интервалов ---
+        # --- 1. Vectorized union of overlapping intervals ---
         w = pd.DataFrame({"ob": codes, "s": s_sec, "e": e_sec}).sort_values(["ob", "s"])
         prev_max_end = w.groupby("ob")["e"].cummax().groupby(w["ob"]).shift()
         new_seg = (w["s"] > prev_max_end) | prev_max_end.isna()
@@ -94,7 +94,7 @@ class HistoricalAnalyzer:
         ms = merged["s"].to_numpy()
         me = merged["e"].to_numpy()
 
-        # --- 2. Векторизованное разбиение интервалов по календарным дням ---
+        # --- 2. Vectorized split of intervals by calendar day ---
         day0 = ms // SEC_DAY
         day_last = (me - 1) // SEC_DAY
         ndays = np.maximum(day_last - day0 + 1, 0)
@@ -121,15 +121,15 @@ class HistoricalAnalyzer:
 
     def busiest_days(self) -> pd.DataFrame:
         """
-        Для каждой области — самый тяжёлый день (макс. время под тревогой; при
-        равенстве — больше тревог). Колонки: oblast, date, total_min, count.
+        For each oblast — the busiest day (max time under alert; ties broken by
+        the number of alerts). Columns: oblast, date, total_min, count.
         """
         daily = self._daily_load().sort_values(["total_min", "count"], ascending=False)
         res = daily.drop_duplicates("oblast", keep="first")
         return res.sort_values(["total_min", "count"], ascending=False).reset_index(drop=True)
 
     def top_busiest_days(self, n: int = 10) -> pd.DataFrame:
-        """ТОП-N самых напряжённых отдельных дней по всей стране (для графика)."""
+        """Top-N busiest individual days across the whole country (for the chart)."""
         daily = self._daily_load().sort_values(["total_min", "count"], ascending=False)
         top = daily.head(n).reset_index(drop=True)
         top["label"] = top["oblast"] + " · " + top["date"].dt.strftime("%d.%m.%Y")
@@ -137,11 +137,11 @@ class HistoricalAnalyzer:
 
     @staticmethod
     def format_duration(minutes: float) -> str:
-        """Минуты -> 'Xч Yм' (например, 1122 -> '18ч 42м')."""
+        """Minutes -> 'Xh Ym' (e.g. 1122 -> '18h 42m')."""
         total = int(round(minutes))
         h, m = divmod(total, 60)
         if h and m:
-            return f"{h}ч {m}м"
+            return f"{h}h {m}m"
         if h:
-            return f"{h}ч"
-        return f"{m}м"
+            return f"{h}h"
+        return f"{m}m"

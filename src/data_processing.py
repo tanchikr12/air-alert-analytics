@@ -2,23 +2,23 @@
 """
 data_processing.py
 ==================
-Класс DataProcessor — загрузка, очистка и подготовка данных воздушных тревог.
+DataProcessor class — loading, cleaning and preparing the air-raid alert data.
 
-Главная идея:
-  Исходный CSV — это ЛОГ СОБЫТИЙ (у каждой тревоги есть начало и конец).
-  Чтобы обучить модель «будет ли тревога в такой-то час», нужен другой формат —
-  ПОЧАСОВАЯ СЕТКА: для каждой пары (область, конкретный час) ставим метку 1,
-  если в этот час шла тревога, и 0 — если нет.
+Core idea:
+  The source CSV is an EVENT LOG (every alert has a start and an end).
+  To train a model that answers "will there be an alert in a given hour", we
+  need a different shape — an HOURLY GRID: for every (oblast, specific hour)
+  pair we set the label to 1 if an alert was active during that hour, else 0.
 
-  Метод build() как раз превращает лог событий в такую сетку и добавляет
-  признаки для машинного обучения.
+  build() is exactly what turns the event log into such a grid and adds the
+  features used for machine learning.
 """
 
 import os
 import numpy as np
 import pandas as pd
 
-# Путь к данным по умолчанию (папка data/ лежит рядом с папкой src/)
+# Default data path (the data/ folder sits next to the src/ folder)
 DEFAULT_DATA_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "data", "official_data_en.csv"
@@ -27,82 +27,82 @@ DEFAULT_DATA_PATH = os.path.join(
 
 class DataProcessor:
     """
-    Загружает и готовит данные. После вызова prepare() доступны:
-      • self.df   — очищенный лог событий (одна строка = одна тревога);
-      • self.grid — почасовая сетка с метками 0/1 и признаками.
+    Loads and prepares the data. After calling prepare() you get:
+      • self.df   — cleaned event log (one row = one alert);
+      • self.grid — hourly grid with 0/1 labels and features.
     """
 
-    # --- Настройки обработки ---
-    LOCAL_TZ = "Europe/Kyiv"      # в файле время в UTC, переводим в киевское
-    MAX_DURATION_HOURS = 24       # тревоги длиннее суток считаем выбросами
-    ROLLING_DAYS = 7              # окно для признака «тревог за последние N дней»
+    # --- Processing settings ---
+    LOCAL_TZ = "Europe/Kyiv"      # the file stores UTC time, we convert to Kyiv time
+    MAX_DURATION_HOURS = 24       # alerts longer than a day are treated as outliers
+    ROLLING_DAYS = 7              # window for the "alerts in the last N days" feature
 
     def __init__(self, data_path: str = DEFAULT_DATA_PATH, rolling_days: int | None = None):
         self.data_path = data_path
         self.rolling_days = rolling_days or self.ROLLING_DAYS
-        self.df: pd.DataFrame | None = None     # очищенные события
-        self.grid: pd.DataFrame | None = None   # почасовая сетка
+        self.df: pd.DataFrame | None = None     # cleaned events
+        self.grid: pd.DataFrame | None = None   # hourly grid
 
     # =================================================================
-    # Публичный конвейер подготовки
+    # Public preparation pipeline
     # =================================================================
     def prepare(self) -> "DataProcessor":
-        """Загрузка + очистка + построение почасовой сетки. Возвращает self."""
+        """Load + clean + build the hourly grid. Returns self."""
         self.df = self._clean(self._load_raw())
         self.grid = self._build_hourly_dataset()
         return self
 
     # =================================================================
-    # Загрузка и очистка
+    # Loading and cleaning
     # =================================================================
     def _load_raw(self) -> pd.DataFrame:
-        """Читает CSV (только нужные колонки)."""
+        """Reads the CSV (only the needed columns)."""
         cols = ["oblast", "level", "started_at", "finished_at"]
         return pd.read_csv(self.data_path, usecols=cols)
 
     def _clean(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Очистка данных:
-          - парсинг дат (UTC -> местное время);
-          - удаление пропусков и некорректных интервалов;
-          - расчёт длительности тревоги;
-          - пометка выбросов по длительности;
-          - вспомогательные колонки (местное время начала/конца, дата, час).
+        Data cleaning:
+          - parse dates (UTC -> local time);
+          - drop missing values and invalid intervals;
+          - compute alert duration;
+          - flag duration outliers;
+          - add helper columns (local start/end time, date, hour).
         """
         df = df.copy()
 
-        # Даты: utc=True приводит всё к единому поясу; format ускоряет парсинг.
+        # Dates: utc=True normalizes everything to one zone; format speeds up parsing.
         df["started_at"] = pd.to_datetime(df["started_at"], utc=True,
                                           format="ISO8601", errors="coerce")
         df["finished_at"] = pd.to_datetime(df["finished_at"], utc=True,
                                            format="ISO8601", errors="coerce")
 
-        # Пропуски и некорректные интервалы (конец раньше начала)
+        # Missing values and invalid intervals (end before start)
         df = df.dropna(subset=["started_at", "finished_at"])
         df = df[df["finished_at"] >= df["started_at"]].copy()
 
-        # Длительность в минутах
+        # Duration in minutes
         df["duration_min"] = (df["finished_at"] - df["started_at"]).dt.total_seconds() / 60.0
-        # Метка выброса (для расчёта средней длительности такие исключаем)
+        # Outlier flag (such rows are excluded when averaging duration)
         df["duration_ok"] = df["duration_min"] <= self.MAX_DURATION_HOURS * 60
-        # «Обрезанная» длительность: для суммарных метрик не даём выбросам доминировать
+        # "Capped" duration: keeps outliers from dominating aggregate metrics
         df["duration_capped"] = df["duration_min"].clip(upper=self.MAX_DURATION_HOURS * 60)
 
-        # Местное (наивное, без tz) время начала и конца каждой тревоги.
+        # Local (naive, tz-free) start and end time of each alert.
         df["start_local"] = df["started_at"].dt.tz_convert(self.LOCAL_TZ).dt.tz_localize(None)
         df["end_local"] = df["finished_at"].dt.tz_convert(self.LOCAL_TZ).dt.tz_localize(None)
-        df["date"] = df["start_local"].dt.normalize()   # наивная дата (без tz)
+        df["date"] = df["start_local"].dt.normalize()   # naive date (tz-free)
         df["hour"] = df["start_local"].dt.hour
         df["weekday"] = df["start_local"].dt.dayofweek
         return df.reset_index(drop=True)
 
     # =================================================================
-    # Превращение лога событий в почасовую сетку с метками 0/1
+    # Turning the event log into an hourly grid with 0/1 labels
     # =================================================================
     def _build_hourly_dataset(self) -> pd.DataFrame:
         """
-        Возвращает DataFrame, где одна строка = (область, конкретный час).
-        Колонки: oblast, ts, alert (0/1), hour, day_of_week, month, year, date,
+        Returns a DataFrame where one row = (oblast, specific hour).
+        Columns: oblast, ts, alert (0/1), hour, day_of_week, month, year, date,
                  recent_cnt, recent_dur.
         """
         df = self.df
@@ -110,9 +110,9 @@ class DataProcessor:
         code_of = {name: i for i, name in enumerate(oblast_list)}
         oblast_codes = df["oblast"].map(code_of).to_numpy()
 
-        # --- 1. Начало/конец каждой тревоги -> «номер часа» ---
-        # astype('datetime64[h]') обрезает время до целого часа и не зависит
-        # от внутреннего разрешения дат (в pandas 3.0 это микросекунды).
+        # --- 1. Start/end of every alert -> "hour index" ---
+        # astype('datetime64[h]') truncates the time to a whole hour and does not
+        # depend on the internal date resolution (microseconds in pandas 3.0).
         start_naive = df["start_local"]
         fin_local = df["end_local"]
         cap = start_naive + pd.Timedelta(hours=self.MAX_DURATION_HOURS)
@@ -121,7 +121,7 @@ class DataProcessor:
         start_idx = start_naive.to_numpy().astype("datetime64[h]").astype("int64")
         end_idx = fin_capped.to_numpy().astype("datetime64[h]").astype("int64")
 
-        # --- 2. «Разворачиваем» каждую тревогу в список затронутых часов ---
+        # --- 2. "Unroll" every alert into the list of hours it covers ---
         counts = np.clip(end_idx - start_idx + 1, 1, None)
         total = int(counts.sum())
         oblast_rep = np.repeat(oblast_codes, counts)
@@ -132,7 +132,7 @@ class DataProcessor:
         BIG = 1_000_000_000
         pos_keys = np.unique(oblast_rep.astype(np.int64) * BIG + pos_hour_idx)
 
-        # --- 3. Полная сетка: все области × все часы периода ---
+        # --- 3. Full grid: all oblasts × all hours of the period ---
         min_idx, max_idx = int(start_idx.min()), int(end_idx.max())
         all_hours = np.arange(min_idx, max_idx + 1)
         n_obl = len(oblast_list)
@@ -141,7 +141,7 @@ class DataProcessor:
         grid_keys = grid_oblast.astype(np.int64) * BIG + grid_hour
         alert = np.isin(grid_keys, pos_keys).astype(np.int8)
 
-        # --- 4. Признаки из времени ---
+        # --- 4. Time-based features ---
         ts = pd.DatetimeIndex(grid_hour.astype("int64").astype("datetime64[h]"))
         grid = pd.DataFrame({
             "oblast": np.array(oblast_list)[grid_oblast],
@@ -150,15 +150,15 @@ class DataProcessor:
             "month": ts.month, "year": ts.year, "date": ts.normalize(),
         })
 
-        # --- 5. Признаки «история активности» ---
+        # --- 5. "Recent activity" features ---
         return self._add_recent_features(grid, oblast_list)
 
     def _add_recent_features(self, grid: pd.DataFrame, oblast_list: list) -> pd.DataFrame:
         """
-        Добавляет признаки на каждый день/область:
-          recent_cnt — тревог за ПРЕДЫДУЩИЕ N дней;
-          recent_dur — средняя длительность за предыдущие N дней.
-        shift(1) гарантирует использование только прошлого (нет «утечки»).
+        Adds per-day/oblast features:
+          recent_cnt — number of alerts over the PREVIOUS N days;
+          recent_dur — average duration over the previous N days.
+        shift(1) guarantees only the past is used (no leakage).
         """
         df = self.df
         base = pd.DataFrame({
@@ -189,22 +189,22 @@ class DataProcessor:
         return grid
 
     # =================================================================
-    # Срезы для статистики и графиков
+    # Slices for statistics and charts
     # =================================================================
     @property
     def oblasts(self) -> list:
-        """Отсортированный список областей из данных."""
+        """Sorted list of oblasts present in the data."""
         return sorted(self.df["oblast"].unique())
 
     def daily_counts(self, oblast: str) -> pd.Series:
-        """Количество тревог по дням для выбранной области."""
+        """Number of alerts per day for the selected oblast."""
         sub = self.df[self.df["oblast"] == oblast]
         s = sub.groupby("date").size().sort_index().asfreq("D", fill_value=0)
         s.name = "alerts"
         return s
 
     def oblast_stats(self) -> pd.DataFrame:
-        """Сводка по всем областям: всего тревог, доля «тревожных» часов, ср. длит."""
+        """Summary over all oblasts: total alerts, share of "alert" hours, avg duration."""
         total = self.df.groupby("oblast").size().rename("alerts")
         base_rate = self.grid.groupby("oblast")["alert"].mean().rename("hourly_rate")
         avg_dur = (self.df[self.df["duration_ok"]].groupby("oblast")["duration_min"]
@@ -213,7 +213,7 @@ class DataProcessor:
         return out.sort_values("alerts", ascending=False)
 
     def region_summary(self, oblast: str) -> dict:
-        """Короткая статистика по одной области — для карточек интерфейса."""
+        """Short statistics for a single oblast — used by the UI cards."""
         sub = self.df[self.df["oblast"] == oblast]
         g = self.grid[self.grid["oblast"] == oblast]
         return {
