@@ -1,6 +1,6 @@
 # 🛡️ Ukraine Air-Raid Alerts — Analytics System
 
-𝗩𝗜𝗗𝗘𝗢 𝗢𝗩𝗘𝗥𝗩𝗜𝗘𝗪 𝗢𝗙 𝗪𝗘𝗕𝗦𝗜𝗧𝗘:𝗵𝘁𝘁𝗽𝘀:
+𝗩𝗜𝗗𝗘𝗢 𝗢𝗩𝗘𝗥𝗩𝗜𝗘𝗪 𝗢𝗙 𝗪𝗘𝗕𝗦𝗜𝗧𝗘
 https://www.loom.com/share/e77a867d1e7144f9a349685ada04e8f5
 
 An interactive **Streamlit** application for analyzing real historical air-raid
